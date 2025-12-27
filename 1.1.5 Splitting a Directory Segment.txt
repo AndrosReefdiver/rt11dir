@@ -1,0 +1,256 @@
+1.1.5 Splitting a Directory Segment
+Whenever RT–11 stores a new file on a volume, it searches through the directory for
+an empty area that is large enough to accommodate the new tentative file. When it
+finds a suitable empty area, it creates the new file as a tentative file followed by an
+empty area, sliding the rest of the directory entries down to make room for the new
+entry. Figure 1–13 shows how RT–11 stores a new file as a tentative file followed by
+an empty area.
+
+Figure 1–13: Storing a New File
+Before
+Block 6
+Segment 1
+-----------
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+empty
+permanent 4
+end-of-segment
+...
+End of block 7
+
+
+
+
+After
+Block 6
+Segment 1
+------------
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+Tentative
+Empty
+Permanent 4
+End−of−segment
+...
+End of block 
+
+This procedure works properly as long as the empty entry and the entries following
+it can move downward. However, if the segment is full, the monitor must split
+the segment, if possible, to store the new entry. Figure 1–14 illustrates a directory
+segment that is full.
+
+First, the monitor checks the header for the number of segments available. If there
+are none, a directory full error results and the monitor cannot store the new file.
+You can squeeze the volume at this point to pack the directory segments and try the
+operation again.
+
+If there is another directory segment available, the monitor divides the current
+segment by first finding a permanent or tentative entry near the middle of the
+segment and saving its first word. In place of the first word, the monitor puts an
+end-of-segment marker. It then saves the current link information, links the current
+segment to the next available segment, and writes the current segment back to the
+volume.
+Next, the monitor restores the first word of the middle entry to the copy of the
+segment that is still in memory, and restores the link information. It slides the
+middle entry and all the entries following it to the top of the segment. Then, the
+monitor writes this segment to the volume as the next available segment. Finally,
+the monitor reads segment 1 into memory and updates the information in its header.
+
+At this point, control passes to the top of the .ENTER routine, and the monitor begins
+its search again for a suitable empty entry to accommodate the new file.
+Figures 1–15 and 1–16 summarize the process of splitting a directory segment. In
+this example, segment 1 was the only segment in use. It contained an empty entry
+but did not have room for a tentative entry in addition to the empty one. After the
+split, segments 1 and 2 are both about half full.
+
+After a directory segment splits, the monitor can store the new file in either the new
+segment or the old one, depending on which segment now contains the empty area.
+In Figure 1–16, the empty area is in segment 2.
+
+Thus far, the link words seem superfluous since the segments are always in
+numerical order. However, consider a situation in which four segments are available:
+segment 1 fills and overflows into segment 2; segment 2 fills and overflows into
+segment 3; segments 1, 2, and 3 are half full, and they are linked in the order in
+which they are located on the volume (blocks 6, 10, and 12). The picture changes if
+you delete a large file from segment 2, leaving a large empty entry, and add a lot of 
+small files to the volume. Segment 2 now fills up and overflows into the next free
+segment, segment 4, so that the links become visibly significant: segment 1 links
+to 2, segment 2 links to 4, and segment 4 links to 3 because segment 2 previously
+linked to 3. Figure 1–17 illustrates this example.
+
+
+Figure 1–14:  Full Directory Segment
+Block 6
+Segment 1
+-----------
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+Permanent 4
+Permanent 5
+. More Entries
+.
+.
+End−of−segment,
+End of Block 7
+
+
+Figure 1–15: Directory Before Splitting
+
+Highest Segment in Use: 1
+Number of Segments Available: 2
+Block 6
+Segment 1
+----------------
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+Permanent 4
+Permanent 5
+Empty
+Permanent 6
+Permanent 7
+End−of−segment,
+Eend of Block 7
+
+Block 10
+Segment 2
+---------
+..
+..
+..
+..
+..
+..
+..
+..
+..
+End of Block 1
+
+Figure 1–16: Directory After Splitting
+Highest Segment in Use: 2
+Number of Segments Available: 2
+Block 6
+Segment 1
+Header
+Permanent 1
+Permanent 2
+Permanent 3
+Permanent 4
+End−of−segment
+.
+.
+.
+.
+.
+.
+End of Block 7
+Link
+Block 10
+Segment 2
+Header
+Permanent 5
+Empty
+Permanent 6
+Permanent 7
+End−of−segment
+.
+.
+.
+.
+.
+.
+End of Block 11
+
+Figure 1–16: Directory After Splitting
+
+Highest Segment in Use: 2
+Number of Segments Available: 2
+Block 6
+Segment 1
+------------
+Header     (-> link to block 10 segment2 header)
+Permanent 1
+Permanent 2
+Permanent 3
+Permanent 4
+End−of−segment
+.
+.
+.
+End of Block 
+
+Block 10
+Segment 2
+-------------
+Header
+Permanent 5
+Empty
+Permanent 6
+Permanent 7
+End−of−segment
+.
+.
+.
+End of Block 11
+
+Figure 1–17: Directory Links
+
+Highest Segment in Use: 3
+Number of Segments Available: 4
+
+Block 6          block 10        block 12
+segment 1       segment 2       segment3
+[       ]link->[        ]link->[       ]
+
+Highest Segment in Use: 4
+Number of Segments Available: 4
+
+Block 6         block 10        block 12          block 14
+segment 1       segment 2       segment 3         segment 4
+[       ]link->[         ]      [       ]<---link [       ]
+                    |                                ^
+                    |--------------------- link -----|
+
+
+The process of splitting a directory segment in half when it is full may seem
+unnecessarily complicated. In fact, if many files are simply copied to a disk, a
+directory full error will occur when the directory is only half full. A squeeze will
+be required to consolidate the half-full directory segments before more files can be
+copied to the disk. However, splitting a directory segment reduces the amount of
+directory entry shuffling that occurs as files are added and deleted on a volume,
+thereby improving overall efficiency.
+
+Refer back to Figure 1–15. Assume the empty entry between PERMANENT-5 and
+PERMANENT-6represents 1008 blocks of free disk space and that directory splitting
+is not done. If a program makes a directory entry for a new 258-block file, the
+directory entry for the file PERMANENT-7 must be moved to directory segment 2 to
+make room in segment 1 for the entry for PERMANENT-5A and an empty entry of
+758 blocks. If the program makes another directory entry for another 258-block file,
+the file PERMANENT-6 must be moved to segment 2 to make room for the entry
+PERMANENT-5Bandanemptyentryof508 blocks. In other words, each time a new
+directory entry occurs in segment 1, segment 2 must be updated as well, requiring
+an extra disk read and write.
+
+If a directory segment is split when full, however, this problem does not occur as
+readily. Consider Figure 1–16 and observe what has happened. When a program
+creates the new 258-block file PERMANENT-5A, only directory segment 2 must be
+updated. No directory shuffling is required. If the file PERMANENT-4 is deleted
+and replaced with two or more files, directory segment 1 has room to accommodate
+the new file entries. Because directory splitting moves several directory entries from
+one segment to another at one time, any given directory operation is far less likely
+to require access to more than one directory segment. Directory splitting reduces
+dramatically the number of disk accesses required, on average, and improves overall
+directory efficiency.

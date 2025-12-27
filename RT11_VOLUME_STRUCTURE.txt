@@ -1,0 +1,299 @@
+Chapter 1
+Disk and Tape Formats
+RT–11 stores files under assigned file names on file-structured volumes. RT–11
+volumes that are file-structured include all disks, diskettes, and magtapes.
+
+Disks and diskettes are directory-structured volumes; they have a series of directory
+segments at the beginning of the volume. The directory segments contain entries
+describing the names, lengths, and creation dates of files on the volume. Because the
+directory is at the beginning of the volume, you can access any file, no matter where
+it is located, without reading any other files. For this reason, directory-structured
+volumes are sometimes called random-access or block-replaceable volumes.
+Magtapes are file-structured volumes that do not have a directory at the beginning
+of the volume. While they do store some directory information at the beginning of
+each file, you must read the entire volume to obtain all the information about all
+the files. Because you must read the files in order, one after the other, magtapes are
+also called sequential-access volumes.
+
+This chapter shows how RT–11 stores files on both random-access and sequential
+access volumes. It also describes the contents of a volume directory and shows how
+to recover information from a random-access volume whose directory is corrupted.
+
+1.1 Random-Access Volumes
+A random-access volume consists of a series of 25610-word blocks where blocks 0
+through 5 are reserved for system use and cannot be used for data storage. The
+volume directory begins at block 6. Figure 1–1 shows the format of a random-access
+volume.
+
+Figure 1–1: Random-Access Volume
+Octal
+Block #, contents
+-------- --------
+0      , reserved
+1      , reserved
+2      , reserved
+3      , reserved
+4      , reserved
+5      , reserved
+6      , directory segment 1
+7      , directory segment 1 (segment is 2 blocks)
+10     , directory segment 2
+11     , directory segment 2
+.
+.
+.
+x      , directory segment 'n'
+x+1    , directory segment 'n'
+Files  , reserved
+.
+.
+.
+...    ,   end of volume
+
+
+
+1.1.1 Home Block
+Block 1 of a random-access volume, called the home block, contains information
+about the volume and its owner. Table 1–1 shows the home block
+format and contents
+
+
+Table1–1: HomeBlockContents
+(locations in octal)
+location   content                  
+000–201 Bad block replacement table.
+204–251 INITIALIZE/RESTORE data area.
+252–273 BUP information area. Default: If BUP volume: "BUQ" and 9 spaces; binary volume number in byte 266
+700–701 (ReservedforDigital). Default: 000000
+702–703 (ReservedforDigital). Default: 000000
+722–723 Pack cluster size.    Default: 000001
+724–725 Block number of first directory segment 000006
+726–727 System version. Default: Radix–50"V3A"
+730–743 Volume Identification. Default: "RT11A"and seven spaces
+744–757 Owner name 12 (decimal) spaces.
+760–773 System Identification. Default: "DECRT11A" and four spaces
+776–777 Checksum
+
+1.1.2 Directory Structure
+The directory consists of a series of two-block segments. Each segment is 51210 words
+long and contains information about files such as name, length, and creation date.
+
+A directory can have from 1 to 31 (decimal) segments. You can display the default number of
+directory segments on an initialized volume by issuing the DIRECTORY/SUMMARY
+command. You can change the size of the directory area during volume initialization
+by specifying the number of directory segments. Use the INITIALIZE/SEGMENTS:n
+command, or DUP with the /Z/N:n options. (See the RT–11 Commands Manual for
+more information on the INITIALIZE command. See the RT–11 Installation Guide
+for a patch that changes the default number of segments.)
+
+In general, you require more segments if you need to store many small files on a
+large volume. However, the minimal number of segments reduces the size of the
+directory area and you obtain more space to store large files on a smaller volume.
+
+The default number of directory segments is a compromise.
+
+Each directory segment consists of a five-word header plus a number of entries
+containing file information. Each segment ends with an end-of-segment marker.
+Figure 1–3 shows the general format of a volume directory segment.
+
+FIGURE 1-3: Volume Directory Segment Format
+   5 word header
+   (entries)
+   end-of-segment marker
+
+
+1.1.2.1 Directory Segment Header Format
+Each directory segment contains a five-word header, which leaves the remaining
+50710 words of the two-block segment for directory entries. Table 1–2 describes the
+contents of the header words.
+Table 1–2: Directory Segment Header Words
+Word Contents
+1. The total number of segments in this directory. The valid range is from 1
+through 3110. If you do not specify the number of segments you require when
+you initialize the volume, DUP uses the default number of segments for that
+volume.
+
+2. The segment number of the next logical directory segment. The directory is a
+linked list of segments and this word is the link between the current segment
+and the next logical segment. If this word is 0, there are no more segments in
+the list.
+
+3. The number of the highest segment currently in use. RT–11 increments this
+counter each time it opens a new segment. Note that the system maintains
+this counter in word 3 of the header only for the first directory segment. It
+completely ignores the third word of the header of the other segments.
+
+4. The number of extra bytes per directory entry, always an unsigned, even octal
+number. See Section 1.1.2.2 for more information.
+
+5. The block number on the volume where the actual stored data identified by this
+segment begins.
+
+1.1.2.2 Directory Entry Format
+The remainder of the directory segment consists of one or more directory entries
+followed by an end-of-segment marker. Figure 1–4 shows the format of a directory
+entry.
+The first word of each directory entry is the status word, which describes the
+condition of the file identified by that directory entry. The high-order byte of the
+status word contains information on the current state of file. The low-order byte can
+identify a file class. Figure 1–5 shows the format of the status word and Table 1–3
+describes the contents.
+File Type
+RT–11 uses three kinds of directory entries to describe the type of file:
+• tentative entries
+• empty entries
+• permanent entries
+
+Figure 1–4: Directory Entry Format
+   Status Word
+   File Name (chars 1−3) in Radix−50
+   File Name (chars 4−6) in Radix−50
+   File Type (1 to 3 characters) in Radix−50
+   Total File Length
+   Job # byte/ Channel # byte
+   Creation Date
+   Optional Extra Word
+   ...
+
+Figure 1–5: Directory Entry Status Word Format   
+     Type of File byte / file class byte
+
+You can think of the three types of entry as describing areas that are categorized
+as temporary data, available space on the volume, or permanent data. The volume
+directory contains at all times sufficient entries to describe the entire volume.
+
+A tentative file is a file that is in the process of being created. When a program
+issues the .ENTER programmed request, for example, it creates a tentative file.
+The program must issue a .CLOSE programmed request to make the tentative file
+permanent. If you do not eventually close a tentative file, the system deletes it. The
+DIR utility program lists tentative files that appear in directories as <UNUSED>
+files.
+
+An emptyentry defines an area of the volume that is available for use. Thus, when
+you delete a file, you obtain an empty area. DIR lists an empty area as <UNUSED>,
+followed by its length.
+
+A permanent file is a tentative file that has been closed with the .CLOSE
+programmed request. Permanent files are unique– that is, only one file can exist
+with a specific name and file type on a volume. If another file exists with the
+same name and type when the program closes the current tentative file, the monitor
+deletes the first file as part of the .CLOSE routine, thus replacing the old file  with
+the new file. DIR lists permanent files that appear in directories by their file names,
+file types, sizes, and creation dates.
+
+The file class information in the low byte of the status word either marks a file as
+having particular characteristics or identifies the file as a member of a particular
+group of files. At present, only one bit is used; the rest are reserved for future use
+by Digital.
+
+The prefix block bit indicates that the file contains at least one prefix block. Prefix
+blocks are optional information blocks that precede a file's information blocks and
+begin at logical block 0 of a file. The utility or application using the prefix blocks
+must set bit E.PRE in the status word, create the prefix blocks, and maintain them.
+RT–11 provides no special support for prefix blocks.
+
+Any utility that needs to store information about a file with the file can use prefix
+blocks. All previous and current utilities and applications can continue to read and
+write files without regard for prefix block functionality. Prefix block functionality
+need not concern you unless you write an application that uses it.
+
+The structure of prefix blocks reserved for use by RT–11 and the recommended
+structure for user applications is as follows:
+• The low byte of the first word of the first prefix block contains the number of
+prefix blocks in the file.
+The high bit of the high byte indicates whether the prefix blocks were created
+by distributed RT–11 software of a user application. If the high bit is clear (0),
+distributed RT–11 software created the prefix blocks; if set (1), a user application
+created them.
+• The second and third words of the first block contain a Radix–50 format identifier.
+• Subsequent words in the prefix blocks are application-dependent.
+Table 1–3 lists the valid values for the bytes of the status word and their meanings.
+All undefined bits in the directory entry status word remain reserved for Digital.
+
+Table 1–3: Directory Entry Status Word Values
+Value
+Mnemonic Meaning
+High Byte Values, Expressed as a Word (in octal)
+000400 E.TENT   Tentative file
+001000 E.MPTY  Empty area. RT-11 
+002000 E.PERM  Permanent file does not use the name, file type, or date fields
+               in the directory entry for an empty area.
+004000 E.EOS   End-of-segment marker. RT–11 uses this marker to determine
+               when it has reached the end of the directory segment during a
+               directory search. Note that an end-of-segment marker can appear
+               as the last word of a segment. It does not have to be followed by a
+               name, file type, or other entry information.
+040000 E.READ  Protected by monitor from write operations from .WRITE request;
+               not protected from any special function operations or deletions.
+100000 E.PROT  Protected permanent file (see Section 1.1.2.3). Only a permanent file can be protected.
+
+Low Byte Values, expressed as a word (octal)
+000020 E.PRE   Prefix block indicator. Indicates the presence of at least one prefix
+               block in this file
+
+
+The second, third, and fourth words in a directory entry contain the file name and file
+type in Radix–50. For empty area, RT–11 normally ignores these words. However,
+the DIR /Q option (or the monitor DIRECTORY command with the /DELETED
+option) lists the names and file types of deleted files.
+
+The fifth word in a directory entry contains the total file length, which consists of the
+number of blocks the file occupies on the volume. Attempts to read or write outside
+the limits of the file result in an end-of-file error.
+
+The sixth word in a directory entry contains the channel number and sometimes the
+job number as well. RT–11 uses this information only for tentative files. A tentative
+file is associated with a job in one of two ways, depending on which RT–11 monitor
+is running.
+
+The low byte of the sixth word of the directory entry contains the channel number.
+
+Thehighbyte of the sixth word contains the number of the job that is opening the file.
+
+The job number is required to identify the correct tentative file during the .CLOSE
+operation. It is also necessary because several jobs can have files open using the
+same channel number.
+
+NOTE
+RT–11 uses the sixth word (job number and channel
+number word) only when the file is tentative. Once
+the file becomes permanent, RT–11 no longer uses the
+word. The function of the sixth word while the file is
+permanent is reserved for future use by Digital.
+
+The seventh word of a directory entry contains the file's creation date. When a
+program creates a tentative file by issuing the .ENTER programmed request, the
+system moves the system date word into the creation date slot for the entry. The
+date word is 0 if you did not enter a date with the DATE monitor command.
+
+User programs can take advantage of the Age bits (bits 14 and 15) to extend the
+directory date by 3210 year increments. Support for Age bits is not available
+in any RT–11 monitor or utility, but is included in the DATE/DATE4Y, IDATE,
+IDCOMP, and IGTDIR subroutines and functions. The base year for calculation
+is incremented by the Age bit values (0-3) and is 1972, 2004, 2036, and 2068,
+respectively. Figure 1–6 shows the format of the date word
+
+Figure 1–6: Date Word Format
+bits:
+15-14 - Age 0-3
+13-10 - Month 1-12
+9-5   - Day 1-31
+4-0   - Year minus 1972 minus 32xAge
+ 
+
+Normally, directory entries are seven words long, but by using DUP with the /Z:n
+option, you can allocate extra words for each entry when you initialize the volume.
+The fourth word of the directory header contains the number of extra bytes you
+specify. Although DUP lets you allocate extra words, RT–11 provides no means to
+easily manipulate this extra information. Any program that needs to access these
+words must perform its own operations on the RT–11 directory. In addition, programs
+that manipulate the directory should use bit test (BIT) instructions, rather than
+compare (CMP) instructions.
+
+1.1.2.3 File Protection
+RT–11 provides a mechanism to prevent a file from being deleted. A file is protected
+when the high bit of its status word is set. Only permanent files can be protected.
+You can protect and unprotect files by using the PIP /R option or the monitor
+RENAMEcommand. Note that a protected file is not protected against modification,
+only against deletion. For more information, see the RT–11 Commands Manual.
+
